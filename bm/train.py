@@ -111,7 +111,7 @@ if args.load_model_name:
 
 while True:
 
-    for batch, (crops, ctx_frames, temp) in enumerate(train_loader):
+    for batch, (crops, crops_gaussian, crops_laplacian, ctx_frames, temp) in enumerate(train_loader):
         scheduler.step()
 
         if train_iter > args.max_train_iters:
@@ -138,6 +138,8 @@ while True:
 
         res, frame1, frame2, _, _ = prepare_inputs(
             crops, args)#, unet_output1, unet_output2)
+        res_g, frame_g1, frame_g2, _, _ = prepare_inputs(crops_gaussian, args)
+        # res_l, frame_l1, frame_l2, _, _ = prepare_inputs(crops_laplacian, args)
 	
 	# UNet.
 	#enc_unet_output1 = warped_unet_output.numpy()
@@ -155,9 +157,9 @@ while True:
 
         for _ in range(args.iterations):
             if args.v_compress and args.stack:
-                encoder_input = torch.cat([frame1, res, frame2], dim=1)
+                encoder_input = torch.cat([frame_g1, res_g, frame_g2], dim=1)
             else:
-            	encoder_input = res
+            	encoder_input = res_g
 
             # Encode.
             encoded, encoder_h_1, encoder_h_2, encoder_h_3 = encoder(
@@ -171,6 +173,7 @@ while True:
             (output, decoder_h_1, decoder_h_2, decoder_h_3, decoder_h_4) = decoder(
                 codes, decoder_h_1, decoder_h_2, decoder_h_3, decoder_h_4)
 
+            res_g = res_g - output
             res = res - output
             out_img = out_img + output.data
             losses.append(res.abs().mean())
@@ -204,7 +207,7 @@ while True:
         if train_iter % args.checkpoint_iters == 0:
             save(train_iter)
 
-        if just_resumed or train_iter % args.eval_iters == 0 or train_iter == 20000:
+        if just_resumed or train_iter % args.eval_iters == 0 or train_iter == 100:
             print('Start evaluation...')
             torch.save(encoder, '{}wunet_2:256_3:256_64x16_encoder_{}'.format('./model/', train_iter) )
             torch.save(binarizer, '{}wunet_2:256_3:256_64x16_binarizer_{}'.format('./model/', train_iter) )

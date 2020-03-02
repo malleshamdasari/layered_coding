@@ -25,8 +25,7 @@ def save_codes(name, codes):
 
 def save_output_images(name, ex_imgs):
   for i, img in enumerate(ex_imgs):
-      if i == len(ex_imgs)-1:
-          save_numpy_array_as_image(
+    save_numpy_array_as_image(
       '%s_iter%02d.png' % (name, i + 1), 
       img
     )
@@ -72,12 +71,14 @@ def run_eval(model, eval_loader, args, output_suffix=''):
   all_losses, all_msssim, all_psnr = [], [], []
 
   start_time = time.time()
-  for i, (batch, ctx_frames, filenames) in enumerate(eval_loader):
+  for i, (batch, batch_g, batch_l, ctx_frames, filenames) in enumerate(eval_loader):
 
       batch = Variable(batch.cuda(), volatile=True)
+      batch_g = Variable(batch_g.cuda(), volatile=True)
+      batch_l = Variable(batch_l.cuda(), volatile=True)
 
       original, out_imgs, losses, code_batch = eval_forward(
-          model, (batch, ctx_frames), args)
+          model, (batch, batch_g, batch_l, ctx_frames), args)
 
       losses, msssim, psnr = finish_batch(
           args, filenames, original, out_imgs, 

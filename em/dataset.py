@@ -291,19 +291,42 @@ class ImageFolder(data.Dataset):
         # CV2 cropping in CPU is faster.
         if self.is_train:
             crops = []
+            crops_gaussian = []
+            crops_laplacian = []
+
             for i in range(self._num_crops):
                 crop = crop_cv2(img, self.patch)
+                crop_gaussian = cv2.GaussianBlur(crop, (5,5), cv2.BORDER_DEFAULT)
+                crop_laplacian = crop - crop_gaussian
+
                 crop[..., :9] /= 255.0
+                crop_gaussian[..., :9] /= 255.0
+                crop_laplacian[..., :9] /= 255.0
+
                 crops.append(np_to_torch(crop))
+                crops_gaussian.append(np_to_torch(crop_gaussian))
+                crops_laplacian.append(np_to_torch(crop_laplacian))
+
             data = crops
+            data_gaussian = crops_gaussian
+            data_laplacian = crops_laplacian
+
         else:
+            img_gaussian = cv2.GaussianBlur(img, (5,5), cv2.BORDER_DEFAULT)
+            img_laplacian = img - img_gaussian
+
             img[..., :9] /= 255.0
+            img_gaussian[..., :9] /= 255.0
+            img_laplacian[..., :9] /= 255.0
+
             data = np_to_torch(img)
+            data_gaussian = np_to_torch(img_gaussian)
+            data_laplacian = np_to_torch(img_laplacian)
 
         ctx_frames /= 255.0
         ctx_frames = np_to_torch(ctx_frames)
 
-        return data, ctx_frames, main_fn
+        return data, data_gaussian, data_laplacian, ctx_frames, main_fn
 
     def __len__(self):
         return len(self.imgs)

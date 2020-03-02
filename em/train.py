@@ -9,6 +9,7 @@ import torch.optim as optim
 import torch.optim.lr_scheduler as LS
 from torch.autograd import Variable
 
+import network
 from dataset import get_loader
 from evaluate import run_eval
 from train_options import parser
@@ -109,12 +110,23 @@ if args.load_model_name:
     scheduler.last_epoch = train_iter - 1
     just_resumed = True
 
-old_encoder = torch.load("./../bm/model/wunet_2:256_3:256_64x16_encoder_20000")
-old_binarizer = torch.load("./../bm/model/wunet_2:256_3:256_64x16_binarizer_20000")
+
+# old_encoder = network.EncoderCell(
+#         v_compress=args.v_compress,
+#         stack=args.stack,
+#         fuse_encoder=args.fuse_encoder,
+#         fuse_level=args.encoder_fuse_level
+#     ).cuda()
+# old_encoder.load_state_dict("./../bm/model/wunet_2:256_3:256_64x16_encoder_5000")
+old_encoder = torch.load("./../bm/model/wunet_2:256_3:256_64x16_encoder_30000")
+
+# old_binarizer = network.Binarizer(bits).cuda()
+# old_binarizer.load_state_dict("./../bm/model/wunet_2:256_3:256_64x16_binarizer_5000")
+old_binarizer = torch.load("./../bm/model/wunet_2:256_3:256_64x16_binarizer_30000")
 
 while True:
 
-    for batch, (crops, ctx_frames, temp) in enumerate(train_loader):
+    for batch, (crops, crops_gaussian, crops_laplacian, ctx_frames, temp) in enumerate(train_loader):
         scheduler.step()
 
         if train_iter > args.max_train_iters:
@@ -147,6 +159,10 @@ while True:
 
         res, frame1, frame2, _, _ = prepare_inputs(
             crops, args)#, unet_output1, unet_output2)
+        res_g, frame_g1, frame_g2, _, _ = prepare_inputs(
+            crops_gaussian, args)#, unet_output1, unet_output2)
+        res_l, frame_l1, frame_l2, _, _ = prepare_inputs(
+            crops_laplacian, args)#, unet_output1, unet_output2)
 	
 	# UNet.
 	#enc_unet_output1 = warped_unet_output.numpy()
@@ -167,9 +183,14 @@ while True:
 
         for _ in range(args.iterations):
             if args.v_compress and args.stack:
-                encoder_input = torch.cat([frame1, res, frame2], dim=1)
+                encoder_input = torch.cat([frame_l1, res_l, frame_l2], dim=1)
             else:
-            	encoder_input = res
+            	encoder_input = res_l
+
+            if args.v_compress and args.stack:
+                old_encoder_input = torch.cat([frame_g1, res_g, frame_g2], dim=1)
+            else:
+            	old_encoder_input = res_g
 
             # Encode.
             encoded, encoder_h_1, encoder_h_2, encoder_h_3 = encoder(
@@ -181,7 +202,7 @@ while True:
 	    
 	    #print(codes.shape)
             #old_encoded, old_encoder_h_1, old_encoder_h_2, old_encoder_h_3 = old_encoder(encoder_input, old_encoder_h_1, old_encoder_h_2, old_encoder_h_3, enc_unet_output1, enc_unet_output2)
-            old_encoded, old_encoder_h_1, old_encoder_h_2, old_encoder_h_3 = old_encoder(encoder_input, old_encoder_h_1, old_encoder_h_2, old_encoder_h_3)
+            old_encoded, old_encoder_h_1, old_encoder_h_2, old_encoder_h_3 = old_encoder(old_encoder_input, old_encoder_h_1, old_encoder_h_2, old_encoder_h_3)
             old_codes = old_binarizer(old_encoded)
             new_codes = torch.cat([codes, old_codes], dim=1)
 
@@ -191,6 +212,8 @@ while True:
             (output, decoder_h_1, decoder_h_2, decoder_h_3, decoder_h_4) = decoder(
                 new_codes, decoder_h_1, decoder_h_2, decoder_h_3, decoder_h_4)
 
+            res_l = res_l - output
+            res_g = res_g - output
             res = res - output
             out_img = out_img + output.data
             losses.append(res.abs().mean())
@@ -224,7 +247,7 @@ while True:
         if train_iter % args.checkpoint_iters == 0:
             save(train_iter)
 
-        if just_resumed or train_iter % args.eval_iters == 0 or train_iter == 20001:
+        if just_resumed or train_iter % args.eval_iters == 0 or train_iter == 100:
             print('Start evaluation...')
             torch.save(encoder, '{}wunet_64x32_encoder_{}'.format('./model/', train_iter) )
             torch.save(binarizer, '{}wunet_64x32_binarizer_{}'.format('./model/', train_iter) )
